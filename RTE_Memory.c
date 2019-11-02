@@ -9,7 +9,7 @@
  *
  */
 #include "RTE_Memory.h"
-#include "./SL_LOG/RTE_LOG.h"
+#include "SL_LOG/RTE_LOG.h"
 #include <string.h>
 #include <math.h>
 #include <limits.h>
