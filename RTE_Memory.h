@@ -38,7 +38,7 @@ typedef void* pool_t;
 typedef int8_t (*mem_mutex_lock_f)(void *mutex);
 typedef int8_t (*mem_mutex_unlock_f)(void *mutex);
 
-typedef struct __mem_handle__t {
+typedef struct __mem_handle_t_ {
     mem_t mem;
     pool_t pool;
     void *mutex;
