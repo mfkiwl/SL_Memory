@@ -1,0 +1,3 @@
+[submodule "SL_LOG"]
+	path = SL_LOG
+	url = git@github.com:sudashannon/SL_LOG.git
