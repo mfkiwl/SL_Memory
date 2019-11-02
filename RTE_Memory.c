@@ -1,12 +1,12 @@
 /**
  * @file RTE_Memory.c
  * @author Leon Shan (813475603@qq.com)
- * @brief 
+ * @brief
  * @version 0.1
  * @date 2019-10-26
- * 
+ *
  * @copyright Copyright (c) 2019
- * 
+ *
  */
 #include "RTE_Memory.h"
 #include <string.h>
@@ -661,10 +661,10 @@ static pool_t mem_add_pool(mem_t mem, void* mem_pool, size_t mem_pool_size)
 #if MEMORY_UST_TEST == 1
 /**
  * @brief A general main function for test.
- * 
- * @param argc 
- * @param argv 
- * @return int 
+ *
+ * @param argc
+ * @param argv
+ * @return int
  */
 int main(int argc, char *argv[]){
     printf("Helloworld!");
