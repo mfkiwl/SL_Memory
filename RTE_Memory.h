@@ -13,12 +13,20 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
+
+#include "RTE_LOG.h"
+
+/* Some IMPORTANT MEM parameters */
+/* Unlike the preview MEM versions, now they are statics */
+#define MEMORY_BLOCK_ALIGN (sizeof(void *) * 2)
+#define MEMORY_ALIGN_BYTES(buf) buf __attribute__ ((aligned (MEMORY_BLOCK_ALIGN)))
 /**
  * @brief Some define for control.
  *
  */
-#define MEMORY_UST_TEST             1           /* define for if enable test main */
-#define MEMORY_USE_64BIT            1
+#define MEMORY_UST_TEST             0           /* define for if enable test main */
+#define MEMORY_USE_64BIT            0
+
 /**
  * @brief This enum defines how many bank the RTE_Memory will handle.
  *
@@ -26,6 +34,7 @@
 typedef enum __mem_bank_t {
     BANK_INVALID  = -1,
     BANK_0        = 0,
+    BANK_1        = 1,
     BANK_CNT,
 }mem_bank_t;
 /**
@@ -35,15 +44,12 @@ typedef enum __mem_bank_t {
 typedef void* mem_t;
 typedef void* pool_t;
 
-typedef int8_t (*mem_mutex_lock_f)(void *mutex);
-typedef int8_t (*mem_mutex_unlock_f)(void *mutex);
-
 typedef struct __mem_handle_t_ {
     mem_t mem;
     pool_t pool;
     void *mutex;
-    mem_mutex_lock_f mutex_lock_func;
-    mem_mutex_unlock_f mutex_unlock_func;
+    mutex_lock_f mutex_lock_func;
+    mutex_unlock_f mutex_unlock_func;
 }mem_handle_t;
 
 /* For include header in CPP code */
@@ -66,7 +72,7 @@ void memory_pool(mem_bank_t bank, void *mem_pool, size_t mem_pool_size);
  * @param unlock_f
  */
 void memory_regist_mutex(mem_bank_t bank, void *mutex,
-						mem_mutex_lock_f lock_func, mem_mutex_unlock_f unlock_func);
+						mutex_lock_f lock_func, mutex_unlock_f unlock_func);
 /**
  * @brief Alloc a size of memory stack.
  *

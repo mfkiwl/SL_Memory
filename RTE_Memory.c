@@ -9,7 +9,6 @@
  *
  */
 #include "RTE_Memory.h"
-#include "SL_LOG/RTE_LOG.h"
 #include <string.h>
 #include <math.h>
 #include <limits.h>
@@ -19,11 +18,7 @@
 #ifndef  max
 #define  max(a, b)      ((a)>(b)?(a):(b))
 #endif
-/* The handle for memory */
-static mem_handle_t MemoryHandle[BANK_CNT] = {
-    0
-};
-static uint8_t zeroval;
+
 #define THIS_MODULE "MEMORY"
 #define MEM_LOGF(...) LOG_FATAL(THIS_MODULE, __VA_ARGS__)
 #define MEM_LOGE(...) LOG_ERROR(THIS_MODULE, __VA_ARGS__)
@@ -32,8 +27,17 @@ static uint8_t zeroval;
 #define MEM_LOGD(...) LOG_DEBUG(THIS_MODULE, __VA_ARGS__)
 #define MEM_LOGV(...) LOG_VERBOSE(THIS_MODULE, __VA_ARGS__)
 #define MEM_ASSERT(v) LOG_ASSERT(THIS_MODULE, v)
+#define MEM_LOCK(bank)   LOG_LOCK(&MemoryHandle[bank])
+#define MEM_UNLOCK(bank) LOG_UNLOCK(&MemoryHandle[bank])
+
+/* The handle for memory */
+static mem_handle_t MemoryHandle[BANK_CNT] = {
+    0
+};
+static uint8_t zeroval;
 /* RealView Compilation Tools for ARM */
 #if defined (__ARMCC_VERSION)
+#include <cmsis_armclang.h>
 static inline int mem_ffs(unsigned int word)
 {
     const unsigned int reverse = word & (~word + 1);
@@ -615,7 +619,7 @@ static mem_t mem_create(void* mem_pool)
 {
     if (((memptr_t)mem_pool % ALIGN_SIZE) != 0)
     {
-        MEM_LOGE("Memory must be aligned to %u bytes.\r\n", (unsigned int)ALIGN_SIZE);
+        MEM_LOGE("Memory must be aligned to %u bytes.", (unsigned int)ALIGN_SIZE);
         return 0;
     }
     control_construct(mem_cast(control_t*, mem_pool));
@@ -629,18 +633,18 @@ static pool_t mem_add_pool(mem_t mem, void* mem_pool, size_t mem_pool_size)
     const size_t pool_bytes = align_down(mem_pool_size - pool_overhead, ALIGN_SIZE);
     if (((memptr_t)mem_pool % ALIGN_SIZE) != 0)
     {
-        MEM_LOGE("Memory must be aligned by %u bytes.\r\n", (unsigned int)ALIGN_SIZE);
+        MEM_LOGE("Memory must be aligned by %u bytes.", (unsigned int)ALIGN_SIZE);
         return 0;
     }
 
     if (pool_bytes < block_size_min || pool_bytes > block_size_max)
     {
 #if MEMORY_USE_64BIT == 1
-        MEM_LOGE("Memory size must be between 0x%x and 0x%x00 bytes.\r\n",
+        MEM_LOGE("Memory size must be between 0x%x and 0x%x00 bytes.",
             (unsigned int)(pool_overhead + block_size_min),
             (unsigned int)((pool_overhead + block_size_max) / 256));
 #else
-        MEM_LOGE("Memory size must be between %u and %u bytes now: %u.\r\n",
+        MEM_LOGE("Memory size must be between %u and %u bytes now: %u.",
             (unsigned int)(pool_overhead + block_size_min),
             (unsigned int)(pool_overhead + block_size_max),
             (unsigned int)(pool_overhead + pool_bytes));
@@ -687,7 +691,7 @@ void memory_pool(mem_bank_t bank, void *mem_pool, size_t mem_pool_size)
  * @param unlock_f
  */
 void memory_regist_mutex(mem_bank_t bank, void *mutex,
-                        mem_mutex_lock_f lock_func, mem_mutex_unlock_f unlock_func)
+                        mutex_lock_f lock_func, mutex_unlock_f unlock_func)
 {
     MemoryHandle[bank].mutex = mutex;
     MemoryHandle[bank].mutex_lock_func = lock_func;
@@ -703,6 +707,7 @@ void memory_regist_mutex(mem_bank_t bank, void *mutex,
 void* memory_alloc(mem_bank_t bank, size_t size)
 {
     void *p = NULL;
+    MEM_LOCK(bank);
     if(size) {
         control_t* control = mem_cast(control_t*, MemoryHandle[bank].mem);
         const size_t adjust = adjust_request_size(size, ALIGN_SIZE);
@@ -712,6 +717,7 @@ void* memory_alloc(mem_bank_t bank, size_t size)
         p = &zeroval;
     }
     MEM_ASSERT(p);
+    MEM_UNLOCK(bank);
     return p;
 }
 /**
@@ -739,6 +745,8 @@ void *memory_calloc(mem_bank_t bank, size_t size)
  */
 void* memory_alloc_align(mem_bank_t bank, size_t align, size_t size)
 {
+    MEM_LOCK(bank);
+    void *retval = NULL;
     control_t* control = mem_cast(control_t*, MemoryHandle[bank].mem);
     const size_t adjust = adjust_request_size(size, ALIGN_SIZE);
     /*
@@ -778,7 +786,9 @@ void* memory_alloc_align(mem_bank_t bank, size_t align, size_t size)
             block = block_trim_free_leading(control, block, gap);
         }
     }
-    return block_prepare_used(control, block, adjust);
+    retval = block_prepare_used(control, block, adjust);
+    MEM_UNLOCK(bank);
+    return retval;
 }
 /**
  * @brief Free a allocated memory stack.
@@ -789,7 +799,8 @@ void* memory_alloc_align(mem_bank_t bank, size_t align, size_t size)
 void memory_free(mem_bank_t bank,void* ptr)
 {
     /* Don't attempt to free a NULL pointer. */
-    if (ptr&&ptr!=&zeroval) {
+    if (ptr && ptr != &zeroval) {
+        MEM_LOCK(bank);
         control_t* control = mem_cast(control_t*, MemoryHandle[bank].mem);
         block_header_t* block = block_from_ptr(ptr);
         if(!block_is_free(block)) {
@@ -798,6 +809,7 @@ void memory_free(mem_bank_t bank,void* ptr)
             block = block_merge_next(control, block);
             block_insert(control, block);
         }
+        MEM_UNLOCK(bank);
     }
 }
 /*
@@ -815,6 +827,7 @@ void memory_free(mem_bank_t bank,void* ptr)
 */
 void* memory_realloc(mem_bank_t bank, void* ptr, size_t size)
 {
+    MEM_LOCK(bank);
     /* Protect the critical section... */
     control_t* control = mem_cast(control_t*, MemoryHandle[bank].mem);
     void* p = 0;
@@ -854,11 +867,12 @@ void* memory_realloc(mem_bank_t bank, void* ptr, size_t size)
             p = ptr;
         }
     }
+    MEM_UNLOCK(bank);
     return p;
 }
 static void print_block(void* ptr, size_t size, int used)
 {
-    MEM_LOGI("%p %s size: %d (%p)\r\n", ptr, used ? "used" : "free", (unsigned int)size, block_from_ptr(ptr));
+    MEM_LOGI("%p %s size: %d (%p)", ptr, used ? "used" : "free", (unsigned int)size, block_from_ptr(ptr));
 }
 /**
  * @brief Demon a bank of memory stack.
@@ -870,9 +884,9 @@ void memory_demon(mem_bank_t bank)
 {
     block_header_t* block =
         offset_to_block(MemoryHandle[bank].pool, -(int)block_header_overhead);
-    MEM_LOGI("--------------------------------------------------\r\n");
-    MEM_LOGI("BANK%d start at %p\r\n",bank, MemoryHandle[bank].pool);
-    MEM_LOGI("--------------------------------------------------\r\n");
+    MEM_LOGI("--------------------------------------------------");
+    MEM_LOGI("BANK%d start at %p",bank, MemoryHandle[bank].pool);
+    MEM_LOGI("--------------------------------------------------");
     while (block && !block_is_last(block)) {
         print_block(block_to_ptr(block), block_size(block), !block_is_free(block));
         block = block_next(block);
@@ -939,6 +953,8 @@ size_t memory_sizeof_max(mem_bank_t bank)
  */
 void *memory_alloc_max(mem_bank_t bank,size_t *size)
 {
+    MEM_LOCK(bank);
+    void *p_retval = NULL;
     /* TODO: Protect the critical section... */
     block_header_t* retval = NULL;
     block_header_t* block = offset_to_block(MemoryHandle[bank].pool, -(int)block_header_overhead);
@@ -955,11 +971,11 @@ void *memory_alloc_max(mem_bank_t bank,size_t *size)
     *size = maxsize;
     if(maxsize > 0) {
         block_mark_as_used(retval);
-      /* TODO: Release the critical section... */
-        return (void *)block_to_ptr(retval);
+        p_retval = (void *)block_to_ptr(retval);
     }
-      /* TODO: Release the critical section... */
-    return NULL;
+    /* TODO: Release the critical section... */
+    MEM_UNLOCK(bank);
+    return p_retval;
 }
 #if MEMORY_UST_TEST == 1
 static uint64_t test_get_tick(void)
@@ -981,7 +997,7 @@ static size_t test_data_out (uint8_t *data,size_t length)
 int main(int argc, char *argv[]){
     uint8_t *test_ptr = NULL;
     log_init(NULL, test_data_out, NULL, NULL, test_get_tick);
-    MEM_LOGI("Helloworld!\r\n");
+    MEM_LOGI("Helloworld!");
     MEM_ASSERT(test_ptr);
     static uint8_t bank_0[100*1024] = {0};
     memory_pool(BANK_0, bank_0, 102400);
@@ -989,7 +1005,7 @@ int main(int argc, char *argv[]){
     uint8_t *p_test = NULL;
     p_test = memory_alloc(BANK_0, 1024);
     memory_demon(BANK_0);
-    MEM_LOGI("p_test's size %d\r\n", memory_sizeof_p(p_test));
+    MEM_LOGI("p_test's size %d", memory_sizeof_p(p_test));
     return 0;
 }
 #endif
